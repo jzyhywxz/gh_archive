@@ -6,18 +6,42 @@ import calendar
 import gridfs
 import traceback
 from json.decoder import JSONDecodeError
-from pymongo import MongoClient, InsertOne
+from pymongo import MongoClient
 from pymongo.errors import DocumentTooLarge, WriteError
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from load_token import load_mongodb_token, load_gh_archive_token
+
+
+def load_token(path, **kwargs) -> dict:
+    """
+    Load token from both `path` and `kwargs`. Please save public information in
+    `path` and provide private information through arguments (e.g., command
+    arguments). In addition, values in `kwargs` will replace that in `path` if
+    there are same token keys appear in both places.
+    :param path: file path that usually saves public information.
+    :param kwargs: private information that provided through (command) arguments.
+    :return: tokens in dictionary format.
+    """
+    token = dict()
+
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            custom_token: dict = json.load(f)
+        for (k, v) in custom_token.items():
+            token[k] = v
+
+    if (kwargs is not None) and (len(kwargs) > 0):
+        for (k, v) in kwargs.items():
+            token[k] = v
+
+    return token
 
 
 class Crawler:
-    def __init__(self, gh_archive_dir):
+    def __init__(self, gh_archive_dir: str, mongodb_token: dict, gh_archive_token: dict):
         self.gh_archive_dir = gh_archive_dir
-        self.mongodb_token = load_mongodb_token()
-        self.gh_archive_token = load_gh_archive_token()
+        self.mongodb_token = mongodb_token
+        self.gh_archive_token = gh_archive_token
         self.mongodb_client = self.__get_mongodb_client()
         self.db = self.mongodb_client[self.mongodb_token['db']]
     
@@ -192,49 +216,67 @@ class Crawler:
 
 
 def show_command_tip():
-    sys.stderr.write('command: python crawler.py -o [-y] [-m] [-d] [-h]\n')
+    sys.stderr.write('command: python crawler.py -u -p -o [-y] [-m] [-d] [-h]\n')
+    sys.stderr.write('  -u: username for mongodb.\n')
+    sys.stderr.write('  -p: password for mongodb.\n')
     sys.stderr.write('  -o: output of the downloads.\n')
     sys.stderr.write('  -y: year.\n')
     sys.stderr.write('  -m: month.\n')
     sys.stderr.write('  -d: day.\n')
     sys.stderr.write('  -h: hour.\n')
     sys.stderr.write('examples:\n')
-    sys.stderr.write('  1) get data at 2015-01-01-0: python crawler.y -o /home/user/gh_archive -h 2015-01-01 0;\n')
-    sys.stderr.write('  2) get data on 2015-01-01: python crawler.y -o /home/user/gh_archive -d 2015-01-01;\n')
-    sys.stderr.write('  3) get data during 2015-01: python crawler.y -o /home/user/gh_archive -m 2015 1;\n')
-    sys.stderr.write('  4) get data during 2015: python crawler.y -o /home/user/gh_archive -y 2015.\n')
+    sys.stderr.write('  1) get data at 2015-01-01-0: python crawler.y -u USERNAME -p PASSWORD '
+                     '-o /home/user/gh_archive -h 2015-01-01 0;\n')
+    sys.stderr.write('  2) get data on 2015-01-01: python crawler.y -u USERNAME -p PASSWORD '
+                     '-o /home/user/gh_archive -d 2015-01-01;\n')
+    sys.stderr.write('  3) get data during 2015-01: python crawler.y -u USERNAME -p PASSWORD '
+                     '-o /home/user/gh_archive -m 2015 1;\n')
+    sys.stderr.write('  4) get data during 2015: python crawler.y -u USERNAME -p PASSWORD '
+                     '-o /home/user/gh_archive -y 2015.\n')
 
 
 def main():
+    mongodb_token_path = 'mongodb_token.json'
+    gh_archive_token_path = 'gh_archive_token.json'
     argv = sys.argv
-    if len(argv) < 4:
-        show_command_tip()
-        return
-    
     try:
-        assert '-o' == argv[1]
-        gh_archive_dir = str(argv[2])
+        assert '-u' == argv[1]
+        user = str(argv[2])
+
+        assert '-p' == argv[3]
+        password = str(argv[4])
+
+        assert '-o' == argv[5]
+        gh_archive_dir = str(argv[6])
         
-        if '-y' == argv[3]:
-            assert len(argv) == 5
-            year = int(argv[4])
-            c = Crawler(gh_archive_dir)
+        if '-y' == argv[7]:
+            assert len(argv) == 9
+            year = int(argv[8])
+            mongodb_token = load_token(mongodb_token_path, user=user, password=password)
+            gh_archive_token = load_token(gh_archive_token_path)
+            c = Crawler(gh_archive_dir, mongodb_token, gh_archive_token)
             c.insert_yearly_gh_data_into_mongodb(year)
-        elif '-m' == argv[3]:
-            assert len(argv) == 6
-            year, month = int(argv[4]), int(argv[5])
+        elif '-m' == argv[7]:
+            assert len(argv) == 10
+            year, month = int(argv[8]), int(argv[9])
             assert 1 <= month <= 12
-            c = Crawler(gh_archive_dir)
+            mongodb_token = load_token(mongodb_token_path, user=user, password=password)
+            gh_archive_token = load_token(gh_archive_token_path)
+            c = Crawler(gh_archive_dir, mongodb_token, gh_archive_token)
             c.insert_monthly_gh_data_into_mongodb(year, month)
-        elif '-d' == argv[3]:
-            assert len(argv) == 5
-            date = str(argv[4])
-            c = Crawler(gh_archive_dir)
+        elif '-d' == argv[7]:
+            assert len(argv) == 9
+            date = str(argv[8])
+            mongodb_token = load_token(mongodb_token_path, user=user, password=password)
+            gh_archive_token = load_token(gh_archive_token_path)
+            c = Crawler(gh_archive_dir, mongodb_token, gh_archive_token)
             c.insert_daily_gh_data_into_mongodb(date)
-        elif '-h' == argv[3]:
-            assert len(argv) == 6
-            date, hour = str(argv[4]), int(argv[5])
-            c = Crawler(gh_archive_dir)
+        elif '-h' == argv[7]:
+            assert len(argv) == 10
+            date, hour = str(argv[8]), int(argv[9])
+            mongodb_token = load_token(mongodb_token_path, user=user, password=password)
+            gh_archive_token = load_token(gh_archive_token_path)
+            c = Crawler(gh_archive_dir, mongodb_token, gh_archive_token)
             c.insert_hourly_gh_data_into_mongodb(date, hour)
         else:
             show_command_tip()
@@ -244,4 +286,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
