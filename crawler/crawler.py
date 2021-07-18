@@ -239,6 +239,11 @@ def main():
     mongodb_token_path = 'mongodb_token.json'
     gh_archive_token_path = 'gh_archive_token.json'
     argv = sys.argv
+
+    if len(argv) < 9:
+        show_command_tip()
+        return
+
     try:
         assert '-u' == argv[1]
         user = str(argv[2])
@@ -286,3 +291,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
